@@ -26,8 +26,8 @@ module global_variables
   real(8), allocatable :: jt(:)
 
 ! frequency domain
-  integer,parameter :: nw = 1024
-  real(8),parameter :: wi = 1d0*ev, wf = 90d0*ev, dw = (wf-wi)/nw
+  integer,parameter :: nw = 128
+  real(8),parameter :: wi = 30d0*ev, wf = 50d0*ev, dw = (wf-wi)/nw
   complex(8) :: zsigma_w(0:nw), zsigma_gs_w(0:nw), zEw_store(0:nw)
 
 ! laser
@@ -63,12 +63,14 @@ subroutine set_parameter
 
 !  gamma = 7.5d0*ev
 !  gamma = 1d0/(30d0/0.024189d3)
-  gamma = 0.5984d0*ev
+
+!  gamma = 0.5984d0*ev
+  gamma = 1d0/(3d0/0.024189d0)
   delta_gamma = gamma*0.01d0
 
 
-  Tprop = 100d0*fs
-  dt = 0.1d0
+  Tprop = 200d0*fs
+  dt = 0.04d0
   nt = aint(Tprop/dt)+1
   dt = Tprop/nt
 
@@ -128,7 +130,7 @@ subroutine set_laser
   allocate(Eprobe(-1:nt+1), Ipump(-1:nt+1), Ipump_int(-1:nt+1))
   omega_pump = 1.5d0*ev
   omega_probe = omega_pump*27d0
-  Tpump = 40d0*fs
+  Tpump = 20d0*fs
   Tprobe_train = 10d0*fs
 !  tdelay = 0d0*fs
 
@@ -166,11 +168,6 @@ subroutine set_laser
   end do
 
 
-!  open(20,file='laser.dat')
-!  do it = 0, nt
-!    write(20,"(999e26.16e3)")dt*it,Ipump(it),Eprobe(it)
-!  end do
-!  close(20)
 
 
 end subroutine set_laser
@@ -187,19 +184,26 @@ subroutine pump_probe_dynamics
   implicit none
   integer :: ndelay, idelay
   real(8) :: tdelay_ini, tdelay_fin
-  integer :: iw
+  integer :: iw, it
+  real(8) :: jule_heat,jule_heat0
 
   allocate(jt(0:nt))
 
-  tdelay_ini = -10d0*fs
-  tdelay_fin =  10d0*fs
-  ndelay = 20
+  tdelay_ini = -20d0*fs
+  tdelay_fin =  20d0*fs
+  ndelay = 100
 
 ! no-pump calculation
   tdelay = 0d0
   call set_laser
+  open(20,file='laser.dat')
+  do it = 0, nt
+    write(20,"(999e26.16e3)")dt*it,Ipump(it),Ipump_int(it),Eprobe(it)
+  end do
+  close(20)
   Ipump = 0d0; Ipump_int = 0d0
   call calc_dynamics
+  jule_heat0 = sum(Eprobe(0:nt)*jt(0:nt))*dt
   call calc_conductivity
   open(30,file='sigma_gs.out')
   do iw = 0, nw
@@ -207,11 +211,27 @@ subroutine pump_probe_dynamics
   end do
   close(30)
   call unset_laser
+  zsigma_gs_w = zsigma_w
 
+  open(50,file='tr_jule_heat.out')
+  open(40,file='tr_sigma.out')
+  do idelay = 0, ndelay
+    tdelay = tdelay_ini + idelay*(tdelay_fin-tdelay_ini) /ndelay
+    call set_laser
+    call calc_dynamics
+    jule_heat = sum(Eprobe(0:nt)*jt(0:nt))*dt
+    call calc_conductivity
+    do iw = 0, nw
+      write(40,"(999e26.16e3)")tdelay/fs,(wi+dw*iw)/ev,zsigma_w(iw)-zsigma_gs_w(iw)
+    end do
+    write(40,*)
 
-!  do idelay = 0, ndelay
-!    tdelay = t_delay_ini + idelay*(t_delay_fin-t_delay_ini) /ndelay
-!  end do
+    write(50,"(999e26.16e3)")tdelay/fs,jule_heat,jule_heat-jule_heat0
+
+    call unset_laser
+  end do
+  close(40)
+  close(50)
 
 end subroutine pump_probe_dynamics
 !------------------------------------------------------------------------------!
